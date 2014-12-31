@@ -149,12 +149,16 @@ type Table struct {
 	// add more stuff like keys
 }
 
-func (tbl *Table) Has(colname string) bool {
+func (tbl *Table) Has(colname string) *Column {
 	data := tbl.Columns
 	i := sort.Search(len(data), func(i int) bool {
 		return data[i].Name == colname
 	})
-	return i < len(data) && data[i].Name == colname
+	ok := i < len(data) && data[i].Name == colname
+	if !ok {
+		return nil
+	}
+	return &data[i]
 }
 
 func (tbl *Table) load(q queryer) error {

@@ -35,9 +35,9 @@ type RowScanner interface {
 }
 
 type Updater interface {
-    Fields() []interface{}
-    FieldCols() []string
-    FieldByCol(field string) (interface{}, error)
+    fields() []interface{}
+    cols() []string
+    FieldByColName(field string) (interface{}, error)
 }
 
 // Scan sets the columns named in cols into dst, using the data
@@ -271,7 +271,7 @@ type Variables struct { {{range .Variables}}
 type {{$db}}DB struct {
     Querier
 
-    Variables *Variables
+    Variables Variables
 {{range .Tables}}{{$table := .Name | camelize | pluralize | export}}
     {{$table}} *{{$table}}{{end}}
 }
@@ -334,7 +334,7 @@ type {{$table}} struct {
 
 func new{{$table}}(db Querier) (*{{$table}}, error) {
     var err error
-    tbl := {{$table}}{db: db, Name: "{{.Name}}"}
+    tbl := &{{$table}}{db: db, Name: "{{.Name}}"}
 
     bindings := []struct {
         query string
@@ -371,15 +371,15 @@ type {{$datatype}} struct { {{range .Columns}}
 
 var _ Updater = &{{$datatype}}{}
 
-func (d {{$datatype}}) cols() []interface{} {
-    return []interface{}{ {{range .Columns}}
-        &d.{{.Name | camelize | export}}, {{end}}
+func (d {{$datatype}}) cols() []string {
+    return []string{ {{range .Columns}}
+        "{{.Name}}",{{end}}
     }
 }
 
-func (d {{$datatype}}) fields() []string {
-    return []string{ {{range .Columns}}
-        "{{.Name}}",{{end}}
+func (d {{$datatype}}) fields() []interface{}{
+    return []interface{}{ {{range .Columns}}
+        &d.{{.Name | camelize | export}}, {{end}}
     }
 }
 
@@ -394,11 +394,21 @@ func (d {{$datatype}}) FieldByColName(col string) (interface{}, error) {
 
 
 {{if .Pk}}
+{{$pklen := len .Pk.Columns}}
+{{if eq $pklen 1}}
+{{$col := index .Pk.Columns 0}}
+{{$colname := $col.Name | camelize | export}}
 // Create a new {{$datatype}}.
 func (tbl *{{$table}}) Create(d *{{$datatype}}) error {
 
-    {{if .Has "created_at"}}
+    {{ $col := .Has "updated_at"}}
+    {{if $col}}
+    {{if $col.Nullable}}
+    // col is nullable {{$col.Nullable}}
     d.CreatedAt = NewTime(time.Now())
+    {{else}}
+    d.CreatedAt = time.Now().UTC().Truncate(time.Second)
+    {{end}}
     {{end}}
 
     // skip the ID
@@ -412,7 +422,7 @@ func (tbl *{{$table}}) Create(d *{{$datatype}}) error {
         return err
     }
 
-    d.ID = id
+    d.{{$colname}} = int(id)
     return nil
 }
 
@@ -437,18 +447,34 @@ func (tbl *{{$table}}) Retrieve(id int64) (*{{$datatype}}, bool, error) {
 
 // Update an existing {{$datatype}} by ID.
 func (tbl *{{$table}}) Update(d *{{$datatype}}) error {
-    {{if .Has "updated_at"}}
+    {{ $col := .Has "updated_at"}}
+    {{if $col}}
+    {{if $col.Nullable}}
+    // col is nullable {{$col.Nullable}}
     d.UpdatedAt = NewTime(time.Now())
+    {{else}}
+    d.UpdatedAt = time.Now().UTC().Truncate(time.Second)
     {{end}}
-    _, err := tbl.update.Exec(append(d.fields()[1:], d.ID)...)
+    {{end}}
+
+    _, err := tbl.update.Exec(append(d.fields()[1:], d.{{$colname}})...)
     return err
 }
 
 // Delete an existing {{$datatype}} by ID.
 func (tbl *{{$table}}) Delete(d *{{$datatype}}) error {
-    _, err := tbl.delete.Exec(d.ID)
+    _, err := tbl.delete.Exec(d.{{$colname}})
     return err
 }
+{{else}}
+
+// Delete an existing {{$datatype}} by its fields (all fields must match)
+func (tbl *{{$table}}) Delete(d *{{$datatype}}) error {
+    _, err := tbl.delete.Exec(d.fields()...)
+    return err
+}
+{{end}}
+
 
 {{else}}
 
