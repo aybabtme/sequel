@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -137,7 +136,6 @@ func guessSQLType(value interface{}) (SQLType, error) {
 		val = v
 		quoted = true
 	}
-	log.Printf("%#v", val)
 
 	switch val {
 	case "on",

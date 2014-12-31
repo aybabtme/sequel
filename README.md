@@ -9,3 +9,7 @@ Generate a generic Go client to your SQL database.
 ## todo
 
 Do all the things.
+
+- Be trigger aware.
+- Generate code.
+- Create dynamic client from reflector?

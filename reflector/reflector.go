@@ -7,7 +7,7 @@ import (
 	"text/tabwriter"
 )
 
-type Queryer interface {
+type queryer interface {
 	Query(string, ...interface{}) (*sql.Rows, error)
 }
 
@@ -21,7 +21,7 @@ type DBSchema struct {
 	Tables    []Table
 }
 
-func DescribeMySQL(db Queryer, dbname string) (*DBSchema, error) {
+func DescribeMySQL(db *sql.DB, dbname string) (*DBSchema, error) {
 
 	schema := &DBSchema{
 		Name: dbname,
@@ -30,14 +30,14 @@ func DescribeMySQL(db Queryer, dbname string) (*DBSchema, error) {
 	return schema, schema.load(db)
 }
 
-func (db *DBSchema) load(q Queryer) error {
+func (db *DBSchema) load(q queryer) error {
 	if err := db.loadVariables(q); err != nil {
 		return err
 	}
 	return db.loadTables(q)
 }
 
-func (db *DBSchema) loadVariables(q Queryer) error {
+func (db *DBSchema) loadVariables(q queryer) error {
 
 	rows, err := q.Query("show variables")
 	if err != nil {
@@ -56,7 +56,7 @@ func (db *DBSchema) loadVariables(q Queryer) error {
 	return rows.Err()
 }
 
-func (db *DBSchema) loadTables(q Queryer) error {
+func (db *DBSchema) loadTables(q queryer) error {
 
 	rows, err := q.Query("show tables")
 	if err != nil {
@@ -139,12 +139,21 @@ Tables!
 type Table struct {
 	Name    string
 	Columns []Column
+	Indices []Index
 	// add more stuff like keys
 }
 
-func (tbl *Table) load(q Queryer) error {
+func (tbl *Table) load(q queryer) error {
+	if err := tbl.loadColumns(q); err != nil {
+		return err
+	}
+
+	return tbl.loadIndices(q)
+}
+
+func (tbl *Table) loadColumns(q queryer) error {
 	// sprintf'ing queries, because yolo (because prepared stmts dont
-	// work for dtl)
+	// work for DDL)
 	rows, err := q.Query(fmt.Sprintf("describe %s", tbl.Name))
 	if err != nil {
 		return fmt.Errorf("describing table %q, %v", tbl.Name, err)
@@ -163,6 +172,29 @@ func (tbl *Table) load(q Queryer) error {
 	return rows.Err()
 }
 
+func (tbl *Table) loadIndices(q queryer) error {
+	// sprintf'ing queries, because yolo (because prepared stmts dont
+	// work for DDL)
+	rows, err := q.Query(fmt.Sprintf("show indexes in %s", tbl.Name))
+	if err != nil {
+		return fmt.Errorf("showing indices %q, %v", tbl.Name, err)
+	}
+	defer rows.Close()
+
+	var parts []IndexPart
+	for i := 0; rows.Next(); i++ {
+		idx := IndexPart{}
+		err := idx.scan(rows)
+		if err != nil {
+			return fmt.Errorf("scanning index %d, %v", i, err)
+		}
+		parts = append(parts, idx)
+	}
+	tbl.Indices = indicesFromParts(parts)
+
+	return rows.Err()
+}
+
 func (tbl Table) String() string {
 	buf := bytes.NewBuffer(nil)
 	fmt.Fprintf(buf, "\ttable %q, %d columns\n", tbl.Name, len(tbl.Columns))
@@ -175,6 +207,14 @@ func (tbl Table) String() string {
 	}
 	fmt.Fprintf(w, "\t)\n")
 	w.Flush()
+
+	fmt.Fprintf(w, "\tvar (\n")
+	for _, idx := range tbl.Indices {
+		fmt.Fprintf(w, "\t\t%s\n", idx.String())
+	}
+	fmt.Fprintf(w, "\t)\n")
+	w.Flush()
+
 	return buf.String()
 }
 
@@ -242,4 +282,125 @@ func (col Column) String() string {
 	}
 
 	return buf.String()
+}
+
+/*
+Indices!
+*/
+
+type IndexType int
+
+const (
+	startIndex IndexType = iota
+
+	IndexBtree
+	IndexFulltext
+	IndexHash
+	IndexRtree
+
+	stopIndex
+)
+
+type Index struct {
+	KeyName      string
+	NonUnique    bool      // 0 if the index cannot contain duplicates, 1 if it can.
+	Cardinality  int       // An estimate of the number of unique values in the index. This is updated by running ANALYZE TABLE or myisamchk -a. Cardinality is counted based on statistics stored as integers, so the value is not necessarily exact even for small tables. The higher the cardinality, the greater the chance that MySQL uses the index when doing joins.
+	SubPart      *int      // The number of indexed characters if the column is only partly indexed, NULL if the entire column is indexed.
+	Packed       *string   // Indicates how the key is packed. NULL if it is not.
+	IndexType    IndexType // The index method used (BTREE, FULLTEXT, HASH, RTREE).
+	Comment      string    // Information about the index not described in its own column, such as disabled if the index is disabled.
+	IndexComment string    // Any comment provided for the index with a COMMENT attribute when the index was created.
+
+	Parts []IndexPart
+}
+
+func (idx Index) IsPrimary() bool { return idx.KeyName == "PRIMARY" }
+
+func (idx *Index) String() string {
+	return fmt.Sprintf("%q (%v)", idx.KeyName, idx.Parts)
+}
+
+func indicesFromParts(parts []IndexPart) []Index {
+
+	indexSet := make(map[string]Index)
+	for _, part := range parts {
+		idx, ok := indexSet[part.KeyName]
+		if !ok {
+			idx.KeyName = part.KeyName
+			idx.NonUnique = part.NonUnique
+			idx.Cardinality = part.Cardinality
+			idx.SubPart = part.SubPart
+			idx.Packed = part.Packed
+			idx.IndexType = part.IndexType
+			idx.Comment = part.Comment
+			idx.IndexComment = part.IndexComment
+		}
+		idx.Parts = append(idx.Parts, part)
+		indexSet[idx.KeyName] = idx
+	}
+	var indices []Index
+	for _, idx := range indexSet {
+		indices = append(indices, idx)
+	}
+	return indices
+}
+
+type IndexPart struct {
+	Table        string    // The name of the table.
+	NonUnique    bool      // 0 if the index cannot contain duplicates, 1 if it can.
+	KeyName      string    // The name of the index. If the index is the primary key, the name is always PRIMARY.
+	SeqInIndex   int       // The column sequence number in the index, starting with 1.
+	ColumnName   string    // The column name.
+	IsAscending  bool      // How the column is sorted in the index. In MySQL, this can have values “A” (Ascending) or NULL (Not sorted).
+	Cardinality  int       // An estimate of the number of unique values in the index. This is updated by running ANALYZE TABLE or myisamchk -a. Cardinality is counted based on statistics stored as integers, so the value is not necessarily exact even for small tables. The higher the cardinality, the greater the chance that MySQL uses the index when doing joins.
+	SubPart      *int      // The number of indexed characters if the column is only partly indexed, NULL if the entire column is indexed.
+	Packed       *string   // Indicates how the key is packed. NULL if it is not.
+	CanBeNull    bool      // Contains YES if the column may contain NULL values and '' if not.
+	IndexType    IndexType // The index method used (BTREE, FULLTEXT, HASH, RTREE).
+	Comment      string    // Information about the index not described in its own column, such as disabled if the index is disabled.
+	IndexComment string    // Any comment provided for the index with a COMMENT attribute when the index was created.
+}
+
+func (idx *IndexPart) String() string {
+	return idx.ColumnName
+}
+
+func (idx *IndexPart) scan(rows *sql.Rows) error {
+	var (
+		nonUnique int
+		collation string
+		canBeNull string
+		indexType string
+	)
+
+	err := rows.Scan(
+		&idx.Table,
+		&nonUnique,
+		&idx.KeyName,
+		&idx.SeqInIndex,
+		&idx.ColumnName,
+		&collation,
+		&idx.Cardinality,
+		&idx.SubPart,
+		&idx.Packed,
+		&canBeNull,
+		&indexType,
+		&idx.Comment,
+		&idx.IndexComment,
+	)
+	idx.NonUnique = (nonUnique != 0)
+	idx.IsAscending = (collation == "A")
+	idx.CanBeNull = (canBeNull == "YES")
+	switch indexType {
+	case "BTREE":
+		idx.IndexType = IndexBtree
+	case "FULLTEXT":
+		idx.IndexType = IndexFulltext
+	case "HASH":
+		idx.IndexType = IndexHash
+	case "RTREE":
+		idx.IndexType = IndexRtree
+	}
+
+	return err
 }
