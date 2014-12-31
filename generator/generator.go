@@ -23,6 +23,8 @@ func Generate(w io.Writer, schema *reflector.DBSchema) error {
 		"var_to_go_type":     variableToGoType,
 		"var_to_go_value":    variableToGoValue,
 		"col_to_go_type":     columnToGoType,
+		"idx_list_args":      idxListArgs,
+		"idx_query_args":     idxQueryArgs,
 		"export":             export,
 
 		"createQuery":   createQuery,
@@ -162,4 +164,32 @@ func columnToGoType(c reflector.Column) string {
 		return "time.Time"
 	}
 	panic(c)
+}
+
+func idxListArgs(idx reflector.Index) string {
+	buf := bytes.NewBuffer(nil)
+	for i, col := range idx.Columns {
+		if i != 0 {
+			fmt.Fprint(buf, ", ")
+		}
+
+		t := columnToGoType(col)
+		if i+1 < len(idx.Columns) && t == columnToGoType(idx.Columns[i+1]) {
+			fmt.Fprintf(buf, "%s", camelize(col.Name))
+		} else {
+			fmt.Fprintf(buf, "%s %s", camelize(col.Name), t)
+		}
+
+	}
+	return buf.String()
+}
+func idxQueryArgs(idx reflector.Index) string {
+	buf := bytes.NewBuffer(nil)
+	for i, col := range idx.Columns {
+		if i != 0 {
+			fmt.Fprint(buf, ", ")
+		}
+		fmt.Fprintf(buf, "%s", camelize(col.Name))
+	}
+	return buf.String()
 }

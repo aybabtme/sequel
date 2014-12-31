@@ -149,6 +149,14 @@ type Table struct {
 	// add more stuff like keys
 }
 
+func (tbl *Table) Has(colname string) bool {
+	data := tbl.Columns
+	i := sort.Search(len(data), func(i int) bool {
+		return data[i].Name == colname
+	})
+	return i < len(data) && data[i].Name == colname
+}
+
 func (tbl *Table) load(q queryer) error {
 	if err := tbl.loadColumns(q); err != nil {
 		return err
@@ -436,6 +444,11 @@ func (idx *IndexPart) scan(tbl *Table, rows *sql.Rows) error {
 	for _, col := range tbl.Columns {
 		if col.Name == idx.ColumnName {
 			idx.Column = col
+
+			if !idx.CanBeNull {
+				idx.Column.Nullable = false
+			}
+
 			return err
 		}
 	}

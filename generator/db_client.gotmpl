@@ -34,6 +34,28 @@ type RowScanner interface {
     Scan(dest ...interface{}) error
 }
 
+type Updater interface {
+    Fields() []interface{}
+    FieldCols() []string
+    FieldByCol(field string) (interface{}, error)
+}
+
+// Scan sets the columns named in cols into dst, using the data
+// in rs.
+func Scan(rs RowScanner, dst Updater, cols []string) error {
+    toScan := make([]interface{}, 0, len(cols))
+    for _, col := range cols {
+        field, err := dst.FieldByColName(col)
+        if err != nil {
+            return err
+        }
+        toScan = append(toScan, field)
+    }
+    return rs.Scan(toScan...)
+}
+
+
+// Null types
 
 type NullInt64 sql.NullInt64
 
@@ -343,11 +365,170 @@ func new{{$table}}(db Querier) (*{{$table}}, error) {
 
 {{$datatype :=  $table | singularize }}
 
-type {{$datatype}} struct {
-    {{range .Columns}}
+type {{$datatype}} struct { {{range .Columns}}
     {{.Name | camelize | export}} {{. | col_to_go_type}} {{end}}
 }
 
-var _ sqldb.Updater = &{{$datatype}}{}
+var _ Updater = &{{$datatype}}{}
+
+func (d {{$datatype}}) cols() []interface{} {
+    return []interface{}{ {{range .Columns}}
+        &d.{{.Name | camelize | export}}, {{end}}
+    }
+}
+
+func (d {{$datatype}}) fields() []string {
+    return []string{ {{range .Columns}}
+        "{{.Name}}",{{end}}
+    }
+}
+
+func (d {{$datatype}}) FieldByColName(col string) (interface{}, error) {
+    switch col { {{range .Columns}}
+    case "{{.Name}}":
+        return &d.{{.Name | camelize | export}}, nil{{end}}
+    default:
+        return nil, fmt.Errorf("invalid column %q", col)
+    }
+}
+
+
+{{if .Pk}}
+// Create a new {{$datatype}}.
+func (tbl *{{$table}}) Create(d *{{$datatype}}) error {
+
+    {{if .Has "created_at"}}
+    d.CreatedAt = NewTime(time.Now())
+    {{end}}
+
+    // skip the ID
+    res, err := tbl.create.Exec(d.fields()[1:]...)
+    if err != nil {
+        return err
+    }
+
+    id, err := res.LastInsertId()
+    if err != nil {
+        return err
+    }
+
+    d.ID = id
+    return nil
+}
+
+// Retrieve an existing {{$datatype}} by ID.
+func (tbl *{{$table}}) Retrieve(id int64) (*{{$datatype}}, bool, error) {
+
+    rs, err := tbl.retrieve.Query(id)
+    switch err {
+    default:
+        return nil, false, err
+    case sql.ErrNoRows:
+        return nil, false, nil
+    case nil:
+        defer rs.Close()
+    }
+    if !rs.Next() {
+        return nil, false, nil
+    }
+    d := &{{$datatype}}{}
+    return d, true, Scan(rs, d, d.cols())
+}
+
+// Update an existing {{$datatype}} by ID.
+func (tbl *{{$table}}) Update(d *{{$datatype}}) error {
+    {{if .Has "updated_at"}}
+    d.UpdatedAt = NewTime(time.Now())
+    {{end}}
+    _, err := tbl.update.Exec(append(d.fields()[1:], d.ID)...)
+    return err
+}
+
+// Delete an existing {{$datatype}} by ID.
+func (tbl *{{$table}}) Delete(d *{{$datatype}}) error {
+    _, err := tbl.delete.Exec(d.ID)
+    return err
+}
+
+{{else}}
+
+// Create a new {{$datatype}}.
+func (tbl *{{$table}}) Create(d *{{$datatype}}) error {
+    {{if .Has "created_at"}}
+    d.CreatedAt = NewTime(time.Now())
+    {{end}}
+    _, err := tbl.create.Exec(d.fields()...)
+    return err
+}
+
+// Update an existing {{$datatype}} by its fields (all fields must match)
+func (tbl *{{$table}}) Update(d *{{$datatype}}) error {
+    {{if .Has "updated_at"}}
+    d.UpdatedAt = NewTime(time.Now())
+    {{end}}
+    _, err := tbl.update.Exec(d.fields()...)
+    return err
+}
+
+// Delete an existing {{$datatype}} by its fields (all fields must match)
+func (tbl *{{$table}}) Delete(d *{{$datatype}}) error {
+    _, err := tbl.delete.Exec(d.fields()...)
+    return err
+}
+
+{{end}}
+
+// List all {{$datatype}}s starting from an offset. Limited to 10k rows.
+func (tbl *{{$table}}) List(offset int) ([]{{$datatype}}, error) {
+    var list []{{$datatype}}
+
+    rows, err := tbl.list.Query(offset)
+    switch err {
+    default:
+        return nil, err
+    case sql.ErrNoRows:
+        return list, nil
+    case nil:
+        defer rows.Close()
+    }
+
+    for rows.Next() {
+        d := {{$datatype}}{}
+        if err := Scan(rows, &d, d.cols()); err != nil {
+            return list, err
+        }
+        list = append(list, d)
+    }
+
+    return list, rows.Err()
+}
+
+{{range .Indices}}{{$idxname := .KeyName | camelize | export}}
+// ListBy{{$idxname}} finds all {{$datatype}}s that match the query
+// pn the index `{{.KeyName}}`, starting at `offset`, limited to 10k rows.
+func (tbl *{{$table}}) ListBy{{$idxname}}({{. | idx_list_args}}, offset int) ([]{{$datatype}}, error) {
+    var list []{{$datatype}}
+
+    rows, err := tbl.idx{{$idxname}}.Query({{. | idx_query_args}}, offset)
+    switch err {
+    default:
+        return nil, err
+    case sql.ErrNoRows:
+        return list, nil
+    case nil:
+        defer rows.Close()
+    }
+
+    for rows.Next() {
+        d := {{$datatype}}{}
+        if err := Scan(rows, &d, d.cols()); err != nil {
+            return list, err
+        }
+        list = append(list, d)
+    }
+
+    return list, rows.Err()
+}
+{{end}}
 
 {{end}}
