@@ -16,18 +16,21 @@ func Generate(w io.Writer, schema *reflector.DBSchema) error {
 	bw := bufio.NewWriter(w)
 
 	tmpl, err := template.New("db").Funcs(template.FuncMap{
-		"camelize":        camelize,
-		"pluralize":       pluralize,
-		"var_to_go_type":  variableToGoType,
-		"var_to_go_value": variableToGoValue,
-		"col_to_go_type":  columnToGoType,
-		"export":          export,
-		"createQuery":     createQuery,
-		"retrieveQuery":   retrieveQuery,
-		"updateQuery":     updateQuery,
-		"deleteQuery":     deleteQuery,
-		"listQuery":       listQuery,
-		"listIndex":       listIndex,
+		"camelize":           camelize,
+		"explode_underscore": explode_underscore,
+		"singularize":        singularize,
+		"pluralize":          pluralize,
+		"var_to_go_type":     variableToGoType,
+		"var_to_go_value":    variableToGoValue,
+		"col_to_go_type":     columnToGoType,
+		"export":             export,
+
+		"createQuery":   createQuery,
+		"retrieveQuery": retrieveQuery,
+		"updateQuery":   updateQuery,
+		"deleteQuery":   deleteQuery,
+		"listQuery":     listQuery,
+		"listIndex":     listIndex,
 	}).Parse(clientTemplate)
 	if err != nil {
 		return err
@@ -42,6 +45,10 @@ func Generate(w io.Writer, schema *reflector.DBSchema) error {
 }
 
 func camelize(str string) string {
+
+	if str == "id" {
+		return "ID"
+	}
 
 	converts := map[string]string{
 		"_id": "_ID",
@@ -69,6 +76,10 @@ func camelize(str string) string {
 	return buf.String()
 }
 
+func explode_underscore(str string) string {
+	return strings.Join(strings.Split(str, "_"), " ")
+}
+
 func export(str string) string {
 	if len(str) < 1 {
 		return str
@@ -86,6 +97,13 @@ func pluralize(str string) string {
 		return str + "s"
 	}
 
+	return str
+}
+
+func singularize(str string) string {
+	if str[len(str)-1] == 's' {
+		return str[:len(str)-1]
+	}
 	return str
 }
 

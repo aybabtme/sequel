@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
+	"sort"
+	"strings"
 	"text/tabwriter"
 )
 
@@ -152,9 +154,13 @@ func (tbl *Table) load(q queryer) error {
 		return err
 	}
 
+	sort.Sort(columnsByName(tbl.Columns))
+
 	if err := tbl.loadIndices(q); err != nil {
 		return err
 	}
+
+	sort.Sort(indexByKeyName(tbl.Indices))
 
 	return nil
 }
@@ -436,3 +442,32 @@ func (idx *IndexPart) scan(tbl *Table, rows *sql.Rows) error {
 
 	return fmt.Errorf("column %q doesn't exist for index %q", idx.ColumnName, idx.KeyName)
 }
+
+type columnsByName []Column
+
+func (b columnsByName) Len() int      { return len(b) }
+func (b columnsByName) Swap(i, j int) { b[i], b[j] = b[j], b[i] }
+func (b columnsByName) Less(i, j int) bool {
+	iname := b[i].Name
+	jname := b[j].Name
+
+	if iname == "id" {
+		return true
+	}
+	if jname == "id" {
+		return false
+	}
+	switch {
+	case strings.Contains(iname, "_id") && !strings.Contains(jname, "_id"):
+		return true
+	case !strings.Contains(iname, "_id") && strings.Contains(jname, "_id"):
+		return false
+	}
+	return iname < jname
+}
+
+type indexByKeyName []Index
+
+func (b indexByKeyName) Len() int           { return len(b) }
+func (b indexByKeyName) Less(i, j int) bool { return b[i].KeyName < b[j].KeyName }
+func (b indexByKeyName) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
