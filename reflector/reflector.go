@@ -137,9 +137,13 @@ Tables!
 */
 
 type Table struct {
-	Name    string
+	Name string
+
+	Pk *Index
+
 	Columns []Column
 	Indices []Index
+
 	// add more stuff like keys
 }
 
@@ -148,7 +152,11 @@ func (tbl *Table) load(q queryer) error {
 		return err
 	}
 
-	return tbl.loadIndices(q)
+	if err := tbl.loadIndices(q); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (tbl *Table) loadColumns(q queryer) error {
@@ -184,13 +192,13 @@ func (tbl *Table) loadIndices(q queryer) error {
 	var parts []IndexPart
 	for i := 0; rows.Next(); i++ {
 		idx := IndexPart{}
-		err := idx.scan(rows)
+		err := idx.scan(tbl, rows)
 		if err != nil {
 			return fmt.Errorf("scanning index %d, %v", i, err)
 		}
 		parts = append(parts, idx)
 	}
-	tbl.Indices = indicesFromParts(parts)
+	tbl.Pk, tbl.Indices = indicesFromParts(parts)
 
 	return rows.Err()
 }
@@ -311,16 +319,17 @@ type Index struct {
 	Comment      string    // Information about the index not described in its own column, such as disabled if the index is disabled.
 	IndexComment string    // Any comment provided for the index with a COMMENT attribute when the index was created.
 
-	Parts []IndexPart
+	Columns []Column
+	Parts   []IndexPart
 }
 
 func (idx Index) IsPrimary() bool { return idx.KeyName == "PRIMARY" }
 
-func (idx *Index) String() string {
+func (idx Index) String() string {
 	return fmt.Sprintf("%q (%v)", idx.KeyName, idx.Parts)
 }
 
-func indicesFromParts(parts []IndexPart) []Index {
+func indicesFromParts(parts []IndexPart) (pk *Index, indices []Index) {
 
 	indexSet := make(map[string]Index)
 	for _, part := range parts {
@@ -336,16 +345,32 @@ func indicesFromParts(parts []IndexPart) []Index {
 			idx.IndexComment = part.IndexComment
 		}
 		idx.Parts = append(idx.Parts, part)
+		idx.Columns = append(idx.Columns, part.Column)
 		indexSet[idx.KeyName] = idx
 	}
-	var indices []Index
+	var pkname string
 	for _, idx := range indexSet {
+		if idx.IsPrimary() {
+			if pkname == "" {
+				pkname = idx.KeyName
+				continue
+			} else {
+				panic("multiple primary keys")
+			}
+		}
 		indices = append(indices, idx)
 	}
-	return indices
+	if pkname != "" {
+		idx := indexSet[pkname]
+		pk = &idx
+	}
+
+	return
 }
 
 type IndexPart struct {
+	Column Column
+
 	Table        string    // The name of the table.
 	NonUnique    bool      // 0 if the index cannot contain duplicates, 1 if it can.
 	KeyName      string    // The name of the index. If the index is the primary key, the name is always PRIMARY.
@@ -365,7 +390,7 @@ func (idx *IndexPart) String() string {
 	return idx.ColumnName
 }
 
-func (idx *IndexPart) scan(rows *sql.Rows) error {
+func (idx *IndexPart) scan(tbl *Table, rows *sql.Rows) error {
 	var (
 		nonUnique int
 		collation string
@@ -402,5 +427,12 @@ func (idx *IndexPart) scan(rows *sql.Rows) error {
 		idx.IndexType = IndexRtree
 	}
 
-	return err
+	for _, col := range tbl.Columns {
+		if col.Name == idx.ColumnName {
+			idx.Column = col
+			return err
+		}
+	}
+
+	return fmt.Errorf("column %q doesn't exist for index %q", idx.ColumnName, idx.KeyName)
 }

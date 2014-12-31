@@ -4,7 +4,7 @@ Generate a generic Go client to your SQL database.
 
 ## Packages
 
-* `reflector`: connects to a database and introspects it's tables and columns.
+* `reflector`: connects to a database and inspects its tables and columns.
 
 ## todo
 

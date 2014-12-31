@@ -1,0 +1,144 @@
+package {{.Name}}
+
+import (
+    "database/sql"
+    "log"
+    "fmt"
+
+    "github.com/go-sql-driver/mysql"
+)
+
+var (
+    _ Querier = &sql.DB{}
+    _ Querier = &sql.Tx{}
+)
+
+// Querier is the interface implemented by types that can
+type Querier interface {
+    Exec(query string, args ...interface{}) (sql.Result, error)
+    Prepare(query string) (*sql.Stmt, error)
+    Query(query string, args ...interface{}) (*sql.Rows, error)
+    QueryRow(query string, args ...interface{}) *sql.Row
+}
+
+
+var (
+    _ RowScanner = &sql.Row{}
+    _ RowScanner = &sql.Rows{}
+)
+
+type RowScanner interface {
+    Scan(dest ...interface{}) error
+}
+
+func isCommandOnTableDenied(err error) bool {
+    e, ok := err.(*mysql.MySQLError)
+    if !ok {
+        return false
+    }
+    return e.Number == 1142
+}
+
+type Variables struct { {{range .Variables}}
+    {{.Name | camelize | export}} {{. | var_to_go_type}} {{end}}
+}
+
+{{$db := .Name | camelize | export}}
+
+type {{$db}}DB struct {
+    Querier
+
+    Variables *Variables
+{{range .Tables}}{{$table := .Name | camelize | pluralize | export}}
+    {{$table}} *{{$table}}{{end}}
+}
+
+func New{{$db}}DB(querier Querier) (*{{$db}}DB, error) {
+    var err error
+    db := &{{$db}}DB{
+        Querier: querier,
+        Variables: Variables{ {{range .Variables}}
+    {{.Name | camelize | export}}: {{. | var_to_go_value}}, {{end}}
+        },
+    }
+
+    {{range .Tables}}
+    {{$table := .Name | camelize | pluralize | export}}
+    db.{{$table}}, err = new{{$table}}(db)
+    if err != nil {
+        return nil, err
+    }
+    {{end}}
+
+    return db, nil
+}
+
+
+{{range .Tables}}
+{{$table := .Name | camelize | pluralize | export}}
+{{$tbl := .}}
+
+const (
+    create{{$table}}SQL   = {{. | createQuery}}
+
+    {{if .Pk}}retrieve{{$table}}SQL = {{. | retrieveQuery }}
+    {{end}}
+    update{{$table}}SQL   = {{. | updateQuery }}
+
+    delete{{$table}}SQL   = {{. | deleteQuery }}
+
+    list{{$table}}SQL     = {{. | listQuery }}
+
+    {{range .Indices}}{{$idxname := .KeyName | camelize | export}}
+    list{{$table}}Idx{{$idxname}}SQL = {{listIndex $tbl .}}
+    {{end}}
+)
+
+// {{$table}} provides operations on {{.Name | camelize | pluralize}} stored in {{$db}}.
+type {{$table}} struct {
+    db   Querier
+    Name string
+
+
+    create   *sql.Stmt
+    retrieve *sql.Stmt
+    update   *sql.Stmt
+    delete   *sql.Stmt
+    list     *sql.Stmt
+
+    {{range .Indices}}{{$idxname := .KeyName | camelize | export}}
+    idx{{.KeyName | camelize | export}} *sql.Stmt{{end}}
+}
+
+func new{{$table}}(db Querier) (*{{$table}}, error) {
+    var err error
+    tbl := {{$table}}{db: db, Name: "{{.Name}}"}
+
+    bindings := []struct {
+        query string
+        stmt  **sql.Stmt
+    }{
+        {query: create{{$table}}SQL, stmt: &tbl.create},
+        {{if .Pk}}{query: retrieve{{$table}}SQL, stmt: &tbl.retrieve},{{end}}
+        {query: update{{$table}}SQL, stmt: &tbl.update},
+        {query: delete{{$table}}SQL, stmt: &tbl.delete},
+        {query: list{{$table}}SQL, stmt: &tbl.list},
+        // indices {{range .Indices}}{{$idxname := .KeyName | camelize | export}}
+        {query: list{{$table}}Idx{{$idxname}}SQL, stmt: &tbl.idx{{.KeyName | camelize | export}} }, {{end}}
+    }
+
+    for _, bind := range bindings {
+        (*bind.stmt), err = db.Prepare(bind.query)
+        switch {
+        case isCommandOnTableDenied(err):
+            log.Printf("unauthorized to perform query: %q", bind.query)
+            return nil, nil // code trying to use this stmt should panic if they're not authorized
+        case err != nil:
+            return nil, fmt.Errorf("preparing query %q: %v", bind.query, err)
+        }
+    }
+
+    return tbl, err
+}
+
+{{end}}
