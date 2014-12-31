@@ -16,8 +16,9 @@ Database!
 */
 
 type DBSchema struct {
-	Name   string
-	Tables []Table
+	Name      string
+	Variables []Variable
+	Tables    []Table
 }
 
 func DescribeMySQL(db Queryer, dbname string) (*DBSchema, error) {
@@ -25,10 +26,38 @@ func DescribeMySQL(db Queryer, dbname string) (*DBSchema, error) {
 	schema := &DBSchema{
 		Name: dbname,
 	}
+
 	return schema, schema.load(db)
 }
 
 func (db *DBSchema) load(q Queryer) error {
+	if err := db.loadVariables(q); err != nil {
+		return err
+	}
+	return db.loadTables(q)
+}
+
+func (db *DBSchema) loadVariables(q Queryer) error {
+
+	rows, err := q.Query("show variables")
+	if err != nil {
+		return fmt.Errorf("showing variables, %v", err)
+	}
+	defer rows.Close()
+
+	for i := 0; rows.Next(); i++ {
+		v := Variable{}
+		if err := v.scan(rows); err != nil {
+			return fmt.Errorf("scanning variable %d, %v", i, err)
+		}
+		db.Variables = append(db.Variables, v)
+	}
+
+	return rows.Err()
+}
+
+func (db *DBSchema) loadTables(q Queryer) error {
+
 	rows, err := q.Query("show tables")
 	if err != nil {
 		return fmt.Errorf("showing tables, %v", err)
@@ -51,11 +80,56 @@ func (db *DBSchema) load(q Queryer) error {
 
 func (db DBSchema) String() string {
 	buf := bytes.NewBuffer(nil)
-	fmt.Fprintf(buf, "db %q, %d tables\n", db.Name, len(db.Tables))
+	fmt.Fprintf(buf, "db %q, %d variables, %d tables\n", db.Name, len(db.Variables), len(db.Tables))
+
+	w := tabwriter.NewWriter(buf, 8, 8, 0, ' ', 0)
+
+	fmt.Fprintf(w, "var (\n")
+	for _, v := range db.Variables {
+		fmt.Fprintf(w, "\t%s\n", v.String())
+	}
+	fmt.Fprintf(w, ")\n")
+	w.Flush()
+
 	for i, tbl := range db.Tables {
 		fmt.Fprintf(buf, "\t%d: %s\n", i, tbl.String())
 	}
 	return buf.String()
+}
+
+/*
+Variables!
+*/
+
+type Variable struct {
+	Name  string
+	Type  SQLType
+	Value interface{}
+}
+
+func (v *Variable) scan(rows *sql.Rows) error {
+	var values []byte
+	err := rows.Scan(&v.Name, &values)
+	if err != nil {
+		return err
+	}
+	v.Type, err = guessSQLType(values)
+	if err != nil {
+		return err
+	}
+
+	v.Value, err = v.Type.ParseBytes(values)
+
+	return err
+}
+
+func (v *Variable) String() string {
+	switch val := v.Value.(type) {
+	case []byte:
+		return fmt.Sprintf("%s \t%#v", v.Name, string(val))
+	}
+
+	return fmt.Sprintf("%s \t%#v", v.Name, v.Value)
 }
 
 /*
@@ -113,9 +187,9 @@ type Column struct {
 	Type     SQLType
 	Nullable bool
 	// add more stuff like `key` and `extra`
-	Key     sql.RawBytes
-	Default sql.RawBytes
-	Extra   sql.RawBytes
+	Key     interface{}
+	Default interface{}
+	Extra   interface{}
 }
 
 func (col *Column) scan(rows *sql.Rows) error {
@@ -133,7 +207,13 @@ func (col *Column) scan(rows *sql.Rows) error {
 		return err
 	}
 	col.Nullable = ("YES" == nullable)
-	col.Type, err = parseSQLType(typeName)
+	col.Type, err = parseSQLTypeName(typeName)
+	if err != nil {
+		return err
+	}
+	if def, ok := col.Default.([]byte); ok {
+		col.Default, err = col.Type.ParseBytes(def)
+	}
 	return err
 }
 
@@ -146,14 +226,19 @@ func (col Column) String() string {
 	}
 	fmt.Fprintf(buf, "%s", col.Type)
 
-	if len(col.Default) != 0 {
-		fmt.Fprintf(buf, " = %q", string(col.Default))
+	if col.Default != nil {
+		fmt.Fprintf(buf, " = %#v", col.Default)
 	}
-	if len(col.Key) != 0 {
-		fmt.Fprintf(buf, " \t// key %q", string(col.Key))
+	var keyed bool
+	if key, ok := col.Key.([]byte); ok && len(key) != 0 {
+		fmt.Fprintf(buf, " \t// key %q", string(key))
+		keyed = true
 	}
-	if len(col.Extra) != 0 {
-		fmt.Fprintf(buf, ", extra %q", string(col.Extra))
+	if extra, ok := col.Extra.([]byte); ok && len(extra) != 0 {
+		if !keyed {
+			fmt.Fprintf(buf, "\t//")
+		}
+		fmt.Fprintf(buf, " extra %q", string(extra))
 	}
 
 	return buf.String()
