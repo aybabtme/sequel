@@ -1,0 +1,44 @@
+package {{.Name}}
+
+import (
+    "bytes"
+    "database/sql"
+    "database/sql/driver"
+    "encoding/json"
+    "fmt"
+    "log"
+    "time"
+
+    "github.com/go-sql-driver/mysql"
+)
+
+{{$db_name := .Name | camelize | export}}
+
+type {{$db_name}}DB struct {
+    Querier
+
+{{range .Tables}}{{$tbl_name := .Name | camelize | pluralize | export}}
+    {{$tbl_name}} *{{$tbl_name}}{{end}}
+}
+
+func New{{$db_name}}DB(querier Querier) (*{{$db_name}}DB, error) {
+    var err error
+    db := &{{$db_name}}DB{Querier: querier, }
+
+    {{range .Tables}}
+    {{$tbl_name := .Name | camelize | pluralize | export}}
+    db.{{$tbl_name}}, err = new{{$tbl_name}}(db)
+    if err != nil {
+        return nil, err
+    }
+    {{end}}
+
+    return db, nil
+}
+
+// Vars contains values set in a database.
+var Vars = struct { {{range .Variables}}
+    {{.Name | camelize | export}} {{. | var_to_go_type}} {{end}}
+} { {{range .Variables}}
+    {{.Name | camelize | export}}: {{. | var_to_go_value}}, {{end}}
+}

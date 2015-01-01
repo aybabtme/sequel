@@ -1,0 +1,272 @@
+package {{.DB.Name}}
+
+import (
+    "time"
+    "database/sql"
+    "log"
+    "fmt"
+)
+
+{{$db_name := .DB.Name | camelize | export}}
+{{$tbl := .Tbl}}
+{{$tbl_name := .Tbl.Name | camelize | pluralize | export}}
+{{$datatype :=  $tbl_name | singularize }}
+
+const (
+    create{{$tbl_name}}SQL   = {{$tbl | createQuery}}
+
+    {{if $tbl.Pk}}retrieve{{$tbl_name}}SQL = {{$tbl | retrieveQuery }}
+    {{end}}
+    update{{$tbl_name}}SQL   = {{$tbl | updateQuery }}
+
+    delete{{$tbl_name}}SQL   = {{$tbl | deleteQuery }}
+
+    list{{$tbl_name}}SQL     = {{$tbl | listQuery }}
+
+    {{range $tbl.Indices}}{{$idxname := .KeyName | camelize | export}}
+    list{{$tbl_name}}Idx{{$idxname}}SQL = {{listIndex $tbl .}}
+    {{end}}
+)
+
+// {{$tbl_name}} provides operations on {{$datatype}}
+// stored in {{$db_name}}.
+type {{$tbl_name}} struct {
+    db   Querier
+    Name string
+
+    create   *sql.Stmt
+    {{if $tbl.Pk}}retrieve *sql.Stmt {{end}}
+    update   *sql.Stmt
+    delete   *sql.Stmt
+    list     *sql.Stmt
+
+    {{range $tbl.Indices}}{{$idxname := .KeyName | camelize | export}}
+    idx{{.KeyName | camelize | export}} *sql.Stmt{{end}}
+}
+
+func new{{$tbl_name}}(db Querier) (*{{$tbl_name}}, error) {
+    var err error
+    tbl := &{{$tbl_name}}{db: db, Name: "{{$tbl.Name}}"}
+
+    bindings := []struct {
+        query string
+        stmt  **sql.Stmt
+    }{
+        {query: create{{$tbl_name}}SQL, stmt: &tbl.create},
+        {{if $tbl.Pk}}{query: retrieve{{$tbl_name}}SQL, stmt: &tbl.retrieve},{{end}}
+        {query: update{{$tbl_name}}SQL, stmt: &tbl.update},
+        {query: delete{{$tbl_name}}SQL, stmt: &tbl.delete},
+        {query: list{{$tbl_name}}SQL, stmt: &tbl.list},
+        // indices {{range $tbl.Indices}}{{$idxname := .KeyName | camelize | export}}
+        {query: list{{$tbl_name}}Idx{{$idxname}}SQL, stmt: &tbl.idx{{.KeyName | camelize | export}} }, {{end}}
+    }
+
+    for _, bind := range bindings {
+        (*bind.stmt), err = db.Prepare(bind.query)
+        switch {
+        case isCommandOnTableDenied(err):
+            log.Printf("unauthorized to perform query: %q", bind.query)
+            return nil, nil // code trying to use this stmt should panic if they're not authorized
+        case err != nil:
+            return nil, fmt.Errorf("preparing query %q: %v", bind.query, err)
+        }
+    }
+
+    return tbl, err
+}
+
+
+
+// {{$datatype}} represents a row in table {{$tbl_name}}.
+type {{$datatype}} struct { {{range .Columns}}
+    {{.Name | camelize | export}} {{$tbl | col_to_go_type}} {{end}}
+}
+
+// ensures that {{$datatype}} implements the Updater interface.
+var _ Updater = &{{$datatype}}{}
+
+func (d {{$datatype}}) cols() []string {
+    return []string{ {{range .Columns}}
+        "{{.Name}}",{{end}}
+    }
+}
+
+func (d {{$datatype}}) fields() []interface{}{
+    return []interface{}{ {{range .Columns}}
+        &d.{{.Name | camelize | export}}, {{end}}
+    }
+}
+
+// FieldByColName returns the field in {{$datatype}} that represents the
+// column named `col`.
+func (d {{$datatype}}) FieldByColName(col string) (interface{}, error) {
+    switch col { {{range .Columns}}
+    case "{{.Name}}":
+        return &d.{{.Name | camelize | export}}, nil{{end}}
+    default:
+        return nil, fmt.Errorf("invalid column %q", col)
+    }
+}
+
+
+{{if $tbl.Pk}}
+{{$pklen := len $tbl.Pk.Columns}}
+{{if eq $pklen 1}}
+{{$col := index $tbl.Pk.Columns 0}}
+{{$colname := $col.Name | camelize | export}}
+// Create a new {{$datatype}}.
+func (tbl *{{$tbl_name}}) Create(d *{{$datatype}}) error {
+
+    {{ $col := .HasUpdatedAt}}
+    {{if $col}}
+    {{if $col.Nullable}}
+    d.CreatedAt = NewTime(time.Now())
+    {{else}}
+    d.CreatedAt = time.Now().UTC().Truncate(time.Second)
+    {{end}}
+    {{end}}
+
+    // skip the ID
+    res, err := tbl.create.Exec(d.fields()[1:]...)
+    if err != nil {
+        return err
+    }
+
+    id, err := res.LastInsertId()
+    if err != nil {
+        return err
+    }
+
+    d.{{$colname}} = int(id)
+    return nil
+}
+
+// Retrieve an existing {{$datatype}} by ID.
+func (tbl *{{$tbl_name}}) Retrieve(id int64) (*{{$datatype}}, bool, error) {
+
+    rs, err := tbl.retrieve.Query(id)
+    switch err {
+    default:
+        return nil, false, err
+    case sql.ErrNoRows:
+        return nil, false, nil
+    case nil:
+        defer rs.Close()
+    }
+    if !rs.Next() {
+        return nil, false, nil
+    }
+    d := &{{$datatype}}{}
+    return d, true, Scan(rs, d, d.cols())
+}
+
+// Update an existing {{$datatype}} by ID.
+func (tbl *{{$tbl_name}}) Update(d *{{$datatype}}) error {
+    {{ $col := .HasUpdatedAt}}
+    {{if $col}}
+    {{if $col.Nullable}}
+    d.UpdatedAt = NewTime(time.Now())
+    {{else}}
+    d.UpdatedAt = time.Now().UTC().Truncate(time.Second)
+    {{end}}
+    {{end}}
+
+    _, err := tbl.update.Exec(append(d.fields()[1:], d.{{$colname}})...)
+    return err
+}
+
+// Delete an existing {{$datatype}} by ID.
+func (tbl *{{$tbl_name}}) Delete(d *{{$datatype}}) error {
+    _, err := tbl.delete.Exec(d.{{$colname}})
+    return err
+}
+{{else}}
+
+// Delete an existing {{$datatype}} by its fields (all fields must match).
+func (tbl *{{$tbl_name}}) Delete(d *{{$datatype}}) error {
+    _, err := tbl.delete.Exec(d.fields()...)
+    return err
+}
+{{end}}
+
+
+{{else}}
+
+// Create a new {{$datatype}}.
+func (tbl *{{$tbl_name}}) Create(d *{{$datatype}}) error {
+    {{if .HasCreatedAt}}
+    d.CreatedAt = NewTime(time.Now())
+    {{end}}
+    _, err := tbl.create.Exec(d.fields()...)
+    return err
+}
+
+// Update an existing {{$datatype}} by its fields (all fields must match).
+func (tbl *{{$tbl_name}}) Update(d *{{$datatype}}) error {
+    {{if .HasUpdatedAt}}
+    d.UpdatedAt = NewTime(time.Now())
+    {{end}}
+    _, err := tbl.update.Exec(d.fields()...)
+    return err
+}
+
+// Delete an existing {{$datatype}} by its fields (all fields must match).
+func (tbl *{{$tbl_name}}) Delete(d *{{$datatype}}) error {
+    _, err := tbl.delete.Exec(d.fields()...)
+    return err
+}
+
+{{end}}
+
+// List all {{$datatype}}s starting from an offset. Limited to 10k rows.
+func (tbl *{{$tbl_name}}) List(offset int) ([]{{$datatype}}, error) {
+    var list []{{$datatype}}
+
+    rows, err := tbl.list.Query(offset)
+    switch err {
+    default:
+        return nil, err
+    case sql.ErrNoRows:
+        return list, nil
+    case nil:
+        defer rows.Close()
+    }
+
+    for rows.Next() {
+        d := {{$datatype}}{}
+        if err := Scan(rows, &d, d.cols()); err != nil {
+            return list, err
+        }
+        list = append(list, d)
+    }
+
+    return list, rows.Err()
+}
+
+{{range $tbl.Indices}}{{$idxname := .KeyName | camelize | export}}
+// ListBy{{$idxname}} finds all {{$datatype}}s that match the query
+// on the index `{{.KeyName}}`, starting at `offset`, limited to 10k rows.
+func (tbl *{{$tbl_name}}) ListBy{{$idxname}}({{. | idx_list_args}}, offset int) ([]{{$datatype}}, error) {
+    var list []{{$datatype}}
+
+    rows, err := tbl.idx{{$idxname}}.Query({{. | idx_query_args}}, offset)
+    switch err {
+    default:
+        return nil, err
+    case sql.ErrNoRows:
+        return list, nil
+    case nil:
+        defer rows.Close()
+    }
+
+    for rows.Next() {
+        d := {{$datatype}}{}
+        if err := Scan(rows, &d, d.cols()); err != nil {
+            return list, err
+        }
+        list = append(list, d)
+    }
+
+    return list, rows.Err()
+}
+{{end}}

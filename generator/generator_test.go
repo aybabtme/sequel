@@ -1,12 +1,7 @@
 package generator_test
 
 import (
-	"bytes"
 	"database/sql"
-	"fmt"
-	"go/parser"
-	"go/printer"
-	"go/token"
 	"testing"
 
 	"github.com/aybabtme/sequel/generator"
@@ -28,23 +23,8 @@ func TestCanGenerateClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	buf := bytes.NewBuffer(nil)
-	err = generator.Generate(buf, schema)
+	err = generator.Generate("test_pkg", schema)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	fset := token.NewFileSet()
-	ast, err := parser.ParseFile(fset, "", buf, parser.ParseComments)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	out := bytes.Buffer{}
-
-	err = printer.Fprint(&out, fset, ast)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fmt.Println(out.String())
 }

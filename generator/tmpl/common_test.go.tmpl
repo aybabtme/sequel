@@ -1,0 +1,208 @@
+package {{.Name}}
+
+import (
+    "encoding/json"
+    "reflect"
+    "testing"
+    "time"
+)
+
+func TestNullString(t *testing.T) {
+    tests := []struct {
+        input NullString
+        json  string
+    }{
+        {
+            input: NullString{Valid: false, String: ""},
+            json:  "null",
+        },
+        {
+            input: NullString{Valid: true, String: ""},
+            json:  `""`,
+        },
+        {
+            input: NullString{Valid: true, String: "something"},
+            json:  `"something"`,
+        },
+    }
+
+    for _, tt := range tests {
+        data, err := json.Marshal(tt.input)
+        if err != nil {
+            t.Fatalf("json.Marshal(%v): %v", tt.input, err)
+        }
+        if string(data) != tt.json {
+            t.Fatalf("json.Marshal(%v)=%v, expect %v", tt.input, string(data), tt.json)
+        }
+        got := NullString{}
+
+        err = json.Unmarshal([]byte(tt.json), &got)
+        if err != nil {
+            t.Fatalf("json.Unmarshal(%v, %v): %v", tt.json, got, err)
+        }
+
+        if !reflect.DeepEqual(tt.input, got) {
+            t.Fatalf("want %v, got %v", tt.input, got)
+        }
+    }
+}
+
+func TestNullInt64(t *testing.T) {
+    tests := []struct {
+        input NullInt64
+        json  string
+    }{
+        {
+            input: NullInt64{Valid: false, Int64: 0},
+            json:  "null",
+        },
+        {
+            input: NullInt64{Valid: true, Int64: 0},
+            json:  `0`,
+        },
+        {
+            input: NullInt64{Valid: true, Int64: 42},
+            json:  `42`,
+        },
+    }
+
+    for _, tt := range tests {
+        data, err := json.Marshal(tt.input)
+        if err != nil {
+            t.Fatalf("json.Marshal(%v): %v", tt.input, err)
+        }
+        if string(data) != tt.json {
+            t.Fatalf("json.Marshal(%v)=%v, expect %v", tt.input, string(data), tt.json)
+        }
+        got := NullInt64{}
+
+        err = json.Unmarshal([]byte(tt.json), &got)
+        if err != nil {
+            t.Fatalf("json.Unmarshal(%v, %v): %v", tt.json, got, err)
+        }
+
+        if !reflect.DeepEqual(tt.input, got) {
+            t.Fatalf("want %v, got %v", tt.input, got)
+        }
+    }
+}
+
+func TestNullFloat64(t *testing.T) {
+    tests := []struct {
+        input NullFloat64
+        json  string
+    }{
+        {
+            input: NullFloat64{Valid: false, Float64: 0},
+            json:  "null",
+        },
+        {
+            input: NullFloat64{Valid: true, Float64: 0},
+            json:  `0`,
+        },
+        {
+            input: NullFloat64{Valid: true, Float64: 42},
+            json:  `42`,
+        },
+        {
+            input: NullFloat64{Valid: true, Float64: 42.1},
+            json:  `42.1`,
+        },
+    }
+
+    for _, tt := range tests {
+        data, err := json.Marshal(tt.input)
+        if err != nil {
+            t.Fatalf("json.Marshal(%v): %v", tt.input, err)
+        }
+        if string(data) != tt.json {
+            t.Fatalf("json.Marshal(%v)=%v, expect %v", tt.input, string(data), tt.json)
+        }
+        got := NullFloat64{}
+
+        err = json.Unmarshal([]byte(tt.json), &got)
+        if err != nil {
+            t.Fatalf("json.Unmarshal(%v, %v): %v", tt.json, got, err)
+        }
+
+        if !reflect.DeepEqual(tt.input, got) {
+            t.Fatalf("want %v, got %v", tt.input, got)
+        }
+    }
+}
+
+func TestNullBool(t *testing.T) {
+    tests := []struct {
+        input NullBool
+        json  string
+    }{
+        {
+            input: NullBool{Valid: false, Bool: false},
+            json:  "null",
+        },
+        {
+            input: NullBool{Valid: true, Bool: true},
+            json:  `true`,
+        },
+        {
+            input: NullBool{Valid: true, Bool: false},
+            json:  `false`,
+        },
+    }
+
+    for _, tt := range tests {
+        data, err := json.Marshal(tt.input)
+        if err != nil {
+            t.Fatalf("json.Marshal(%v): %v", tt.input, err)
+        }
+        if string(data) != tt.json {
+            t.Fatalf("json.Marshal(%v)=%v, expect %v", tt.input, string(data), tt.json)
+        }
+        got := NullBool{}
+
+        err = json.Unmarshal([]byte(tt.json), &got)
+        if err != nil {
+            t.Fatalf("json.Unmarshal(%v, %v): %v", tt.json, got, err)
+        }
+
+        if !reflect.DeepEqual(tt.input, got) {
+            t.Fatalf("want %v, got %v", tt.input, got)
+        }
+    }
+}
+
+func TestNullTime(t *testing.T) {
+    tests := []struct {
+        input NullTime
+        json  string
+    }{
+        {
+            input: NullTime{Valid: false, Time: time.Time{}},
+            json:  "null",
+        },
+        {
+            input: NullTime{Valid: true, Time: time.Date(2000, 1, 1, 1, 1, 1, 1, time.UTC)},
+            json:  `"2000-01-01T01:01:01.000000001Z"`,
+        },
+    }
+
+    for _, tt := range tests {
+        data, err := json.Marshal(tt.input)
+        if err != nil {
+            t.Fatalf("json.Marshal(%v): %v", tt.input, err)
+        }
+        if string(data) != tt.json {
+            t.Fatalf("json.Marshal(%v)=%v, expect %v", tt.input, string(data), tt.json)
+        }
+        got := NullTime{}
+
+        err = json.Unmarshal([]byte(tt.json), &got)
+        if err != nil {
+            t.Fatalf("json.Unmarshal(%v, %v): %v", tt.json, got, err)
+        }
+
+        if !reflect.DeepEqual(tt.input, got) {
+            t.Fatalf("want %v, got %v", tt.input, got)
+        }
+    }
+}

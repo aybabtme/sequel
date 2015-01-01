@@ -1,0 +1,258 @@
+package {{.Name}}
+
+import (
+    "database/sql"
+    "encoding/json"
+    "time"
+    "bytes"
+
+    "github.com/go-sql-driver/mysql"
+)
+
+var (
+    _ Querier = &sql.DB{}
+    _ Querier = &sql.Tx{}
+)
+
+// Querier is the interface implemented by types that can
+type Querier interface {
+    Exec(query string, args ...interface{}) (sql.Result, error)
+    Prepare(query string) (*sql.Stmt, error)
+    Query(query string, args ...interface{}) (*sql.Rows, error)
+    QueryRow(query string, args ...interface{}) *sql.Row
+}
+
+var (
+    _ RowScanner = &sql.Row{}
+    _ RowScanner = &sql.Rows{}
+)
+
+type RowScanner interface {
+    Scan(dest ...interface{}) error
+}
+
+type Updater interface {
+    fields() []interface{}
+    cols() []string
+    FieldByColName(field string) (interface{}, error)
+}
+
+// Scan sets the columns named in cols into dst, using the data
+// in rs.
+func Scan(rs RowScanner, dst Updater, cols []string) error {
+    toScan := make([]interface{}, 0, len(cols))
+    for _, col := range cols {
+        field, err := dst.FieldByColName(col)
+        if err != nil {
+            return err
+        }
+        toScan = append(toScan, field)
+    }
+    return rs.Scan(toScan...)
+}
+
+
+// Null types
+
+type NullInt64 sql.NullInt64
+
+var (
+    _ json.Unmarshaler = &NullInt64{}
+    _ driver.Value     = &NullInt64{}
+)
+
+func NewInt64(i int64) NullInt64 {
+    return NullInt64{Int64: i, Valid: true}
+}
+
+func (n *NullInt64) Scan(value interface{}) error {
+    sqln := new(sql.NullInt64)
+    err := sqln.Scan(value)
+    *n = NullInt64(*sqln)
+    return err
+}
+
+func (n NullInt64) Value() (driver.Value, error) {
+    return sql.NullInt64(n).Value()
+}
+
+func (n *NullInt64) UnmarshalJSON(data []byte) error {
+    if bytes.Equal(data, []byte("null")) {
+        n.Valid = false
+        return nil
+    }
+    err := json.Unmarshal(data, &n.Int64)
+    n.Valid = (err == nil)
+    return err
+}
+
+func (n NullInt64) MarshalJSON() ([]byte, error) {
+    if !n.Valid {
+        return []byte("null"), nil
+    }
+    return json.Marshal(n.Int64)
+}
+
+type NullString sql.NullString
+
+var (
+    _ json.Unmarshaler = &NullString{}
+    _ driver.Value     = &NullString{}
+)
+
+func NewString(s string) NullString {
+    return NullString{String: s, Valid: true}
+}
+
+func (n *NullString) Scan(value interface{}) error {
+    sqln := new(sql.NullString)
+    err := sqln.Scan(value)
+    *n = NullString(*sqln)
+    return err
+}
+
+func (n NullString) Value() (driver.Value, error) {
+    return sql.NullString(n).Value()
+}
+
+func (n *NullString) UnmarshalJSON(data []byte) error {
+    if bytes.Equal(data, []byte("null")) {
+        n.Valid = false
+        return nil
+    }
+    err := json.Unmarshal(data, &n.String)
+    n.Valid = (err == nil)
+    return err
+}
+
+func (n NullString) MarshalJSON() ([]byte, error) {
+    if !n.Valid {
+        return []byte("null"), nil
+    }
+    return json.Marshal(n.String)
+}
+
+type NullFloat64 sql.NullFloat64
+
+var (
+    _ json.Unmarshaler = &NullFloat64{}
+    _ driver.Value     = &NullFloat64{}
+)
+
+func NewFloat64(f float64) NullFloat64 {
+    return NullFloat64{Float64: f, Valid: true}
+}
+
+func (n *NullFloat64) Scan(value interface{}) error {
+    sqln := new(sql.NullFloat64)
+    err := sqln.Scan(value)
+    *n = NullFloat64(*sqln)
+    return err
+}
+
+func (n NullFloat64) Value() (driver.Value, error) {
+    return sql.NullFloat64(n).Value()
+}
+
+func (n *NullFloat64) UnmarshalJSON(data []byte) error {
+    if bytes.Equal(data, []byte("null")) {
+        n.Valid = false
+        return nil
+    }
+    err := json.Unmarshal(data, &n.Float64)
+    n.Valid = (err == nil)
+    return err
+}
+
+func (n NullFloat64) MarshalJSON() ([]byte, error) {
+    if !n.Valid {
+        return []byte("null"), nil
+    }
+    return json.Marshal(n.Float64)
+}
+
+type NullBool sql.NullBool
+
+var (
+    _ json.Unmarshaler = &NullBool{}
+    _ driver.Value     = &NullBool{}
+)
+
+func NewBool(b bool) NullBool {
+    return NullBool{Bool: b, Valid: true}
+}
+
+func (n *NullBool) Scan(value interface{}) error {
+    sqln := new(sql.NullBool)
+    err := sqln.Scan(value)
+    *n = NullBool(*sqln)
+    return err
+}
+
+func (n NullBool) Value() (driver.Value, error) {
+    return sql.NullBool(n).Value()
+}
+
+func (n *NullBool) UnmarshalJSON(data []byte) error {
+    if bytes.Equal(data, []byte("null")) {
+        n.Valid = false
+        return nil
+    }
+    err := json.Unmarshal(data, &n.Bool)
+    n.Valid = (err == nil)
+    return err
+}
+
+func (n NullBool) MarshalJSON() ([]byte, error) {
+    if !n.Valid {
+        return []byte("null"), nil
+    }
+    return json.Marshal(n.Bool)
+}
+
+type NullTime mysql.NullTime
+
+var (
+    _ json.Unmarshaler = &NullTime{}
+    _ driver.Value     = &NullTime{}
+)
+
+func NewTime(t time.Time) NullTime {
+    return NullTime{Time: t, Valid: true}
+}
+
+func (n *NullTime) Scan(value interface{}) error {
+    sqln := new(mysql.NullTime)
+    err := sqln.Scan(value)
+    *n = NullTime(*sqln)
+    return err
+}
+
+func (n NullTime) Value() (driver.Value, error) {
+    return mysql.NullTime(n).Value()
+}
+
+func (n *NullTime) UnmarshalJSON(data []byte) error {
+    if bytes.Equal(data, []byte("null")) {
+        n.Valid = false
+        return nil
+    }
+    err := json.Unmarshal(data, &n.Time)
+    n.Valid = (err == nil)
+    return err
+}
+
+func (n NullTime) MarshalJSON() ([]byte, error) {
+    if !n.Valid {
+        return []byte("null"), nil
+    }
+    return json.Marshal(n.Time)
+}
+
+func isCommandOnTableDenied(err error) bool {
+    e, ok := err.(*mysql.MySQLError)
+    if !ok {
+        return false
+    }
+    return e.Number == 1142
+}

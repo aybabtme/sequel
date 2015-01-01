@@ -3,9 +3,10 @@ package generator
 import (
 	"bytes"
 	"fmt"
-	"github.com/aybabtme/sequel/reflector"
 	"log"
 	"text/tabwriter"
+
+	"github.com/aybabtme/sequel/reflector"
 )
 
 func createQuery(tbl reflector.Table) string {
