@@ -68,7 +68,7 @@ func new{{$tbl_name}}(db Querier) (*{{$tbl_name}}, error) {
             log.Printf("unauthorized to perform query: %q", bind.query)
             return nil, nil // code trying to use this stmt should panic if they're not authorized
         case err != nil:
-            return nil, fmt.Errorf("preparing query %q: %v", bind.query, err)
+            return nil, fmt.Errorf("preparing query: %v, query:\n%s", err, bind.query)
         }
     }
 

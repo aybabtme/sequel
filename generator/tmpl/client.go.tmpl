@@ -9,7 +9,7 @@ type {{$db_name}}DB struct {
     {{$tbl_name}} *{{$tbl_name}}{{end}}
 }
 
-func New{{$db_name}}DB(querier Querier) (*{{$db_name}}DB, error) {
+func NewDB(querier Querier) (*{{$db_name}}DB, error) {
     var err error
     db := &{{$db_name}}DB{Querier: querier, }
 

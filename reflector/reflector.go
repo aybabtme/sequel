@@ -34,9 +34,12 @@ func DescribeMySQL(db *sql.DB, dbname string) (*DBSchema, error) {
 
 func (db *DBSchema) load(q queryer) error {
 	if err := db.loadVariables(q); err != nil {
-		return err
+		return fmt.Errorf("loading variables: %v", err)
 	}
-	return db.loadTables(q)
+	if err := db.loadTables(q); err != nil {
+		return fmt.Errorf("loading tables: %v", err)
+	}
+	return nil
 }
 
 func (db *DBSchema) loadVariables(q queryer) error {
@@ -60,7 +63,7 @@ func (db *DBSchema) loadVariables(q queryer) error {
 
 func (db *DBSchema) loadTables(q queryer) error {
 
-	rows, err := q.Query("show tables")
+	rows, err := q.Query(`show full tables where Table_Type != 'VIEW'`)
 	if err != nil {
 		return fmt.Errorf("showing tables, %v", err)
 	}
@@ -68,7 +71,7 @@ func (db *DBSchema) loadTables(q queryer) error {
 
 	for rows.Next() {
 		tbl := Table{}
-		if err := rows.Scan(&tbl.Name); err != nil {
+		if err := rows.Scan(&tbl.Name, new(sql.RawBytes)); err != nil {
 			return err
 		}
 		if err := tbl.load(q); err != nil {

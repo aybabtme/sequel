@@ -1,1 +1,67 @@
 package {{.Name}}
+
+{{$db_name := .Name | camelize | export}}
+
+import (
+    "database/sql"
+    "testing"
+    "os"
+    "log"
+)
+
+var (
+    openDb Querier
+)
+
+var resetDB func(t *testing.T)
+
+func TestMain(m *testing.M) {
+    log.SetPrefix("{{.Name}} tests: ")
+    log.SetFlags(0)
+    dsnEnv := "TEST_DB_DSN"
+    dsn := os.Getenv(dsnEnv)
+    if dsn == "" {
+        log.Fatalf("can't setup tests: need a DSN in env var %q", dsnEnv)
+    }
+
+    db, err := sql.Open("mysql", os.Getenv("TEST_DB_DSN"))
+    if err != nil {
+        log.Fatalf("can't setup DB for tests: %v", err)
+    }
+    tx, err := db.Begin()
+    if err != nil {
+        log.Fatalf("can't setup TX for tests: %v", err)
+    }
+    openDb = tx
+
+    resetDB = func(t *testing.T) {
+        if tx != nil {
+            err = tx.Rollback()
+            if err != nil {
+                t.Fatalf("can't reset TX for test: %v", err)
+            }
+        }
+        tx, err = db.Begin()
+        if err != nil {
+            t.Fatalf("can't create TX for test: %v", err)
+        }
+        openDb = tx
+    }
+
+    retCode := m.Run()
+
+    if err := tx.Rollback(); err != nil {
+        log.Fatalf("failed to rollback TX after tests: %v", err)
+    }
+    _ = db.Close()
+
+    os.Exit(retCode)
+}
+
+func TestCanConnectClient(t *testing.T) {
+    _, err := NewDB(openDb)
+    if err != nil {
+        t.Fatalf("couldn't create client: %v", err)
+    }
+}
+
