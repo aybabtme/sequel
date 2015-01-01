@@ -4,6 +4,16 @@ Generate a generic Go client to your SQL database.
 
 Only supports MySQL at this time.
 
+##  Design  goals and rationale
+
+* There shall be no magic.
+* Create a good codebase which can then be tweaked manually.
+* The client should be molded according to a properly crafted
+database schema, and not the opposite.
+* The client should be lightweight and provide basic CRUD, not be an all encompassing blurb.
+* The client should work well and be extendable with custom plain SQL queries.
+* Plain SQL queries should be able to leverage the facilities provided by the client.
+
 ## Tool
 
 The root of this repository is a CLI tool, install it the normal way:
