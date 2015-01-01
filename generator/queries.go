@@ -173,7 +173,8 @@ func orderByString(tbl reflector.Table) string {
 			}
 		}
 	}
-	log.Printf("not ordering with an indexed key (%s)", tbl.Columns[0].Name)
+	log.Printf("Table %q doesn't have an ordered column in one of its primary key or index. "+
+		"Ordering will be done using column %q as a fallback.", tbl.Name, tbl.Columns[0].Name)
 	return tbl.Columns[0].Name
 }
 
@@ -185,7 +186,9 @@ func orderByIdxString(idx reflector.Index) string {
 			return col.ColumnName
 		}
 	}
-	log.Printf("not ordering with an indexed key (%s)", idx.Columns[0].Name)
+	log.Printf("Index %q doesn't have any ordered column."+
+		"Ordering will be done using column %q as a fallback.",
+		idx.KeyName, idx.Columns[0].Name)
 	return idx.Columns[0].Name
 }
 

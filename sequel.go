@@ -108,7 +108,9 @@ func valOrDefault(ctx *cli.Context, f cli.StringFlag) string {
 		return str
 	}
 	if f.Value == "" {
-		log.Fatalf("flag not set: %q", f.Name)
+		log.Printf("flag not set: %q", f.Name)
+		cli.ShowAppHelp(ctx)
+		os.Exit(1)
 	}
 	return f.Value
 }
