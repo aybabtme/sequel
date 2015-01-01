@@ -3,10 +3,8 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"io"
 	"log"
 	"os"
-	"path/filepath"
 
 	"github.com/aybabtme/sequel/generator"
 	"github.com/aybabtme/sequel/reflector"
@@ -47,9 +45,10 @@ func main() {
 		Usage:  "location of the database to connect to",
 	}
 
-	asPackageFlag := cli.BoolFlag{
-		Name:  "pkg",
-		Usage: "whether to create a package child of the current directory",
+	dirFlag := cli.StringFlag{
+		Name:  "dir",
+		Value: ".",
+		Usage: "sub directory where to create the package",
 	}
 
 	app.Name = "sequel"
@@ -61,7 +60,7 @@ func main() {
 		passwordFlag,
 		dbNameFlag,
 		dbAddrFlag,
-		asPackageFlag,
+		dirFlag,
 	}
 	app.Action = func(ctx *cli.Context) {
 		var (
@@ -94,22 +93,8 @@ func main() {
 			log.Fatalf("describing DB: %v", err)
 		}
 
-		var w io.Writer
-		if ctx.Bool(asPackageFlag.Name) {
-			if err := os.Mkdir(dbname, 0755); err != nil && !os.IsExist(err) {
-				log.Fatalf("creating package: %v", err)
-			}
-			f, err := os.Create(filepath.Join(dbname, dbname+".go"))
-			if err != nil {
-				log.Fatalf("creating file: %v", err)
-			}
-			defer f.Close()
-			w = f
-		} else {
-			w = os.Stdout
-		}
-
-		if err := generator.Generate(w, schema); err != nil {
+		dirname := valOrDefault(ctx, dirFlag)
+		if err := generator.Generate(dirname, schema); err != nil {
 			log.Fatalf("generating schema: %v", err)
 		}
 	}
