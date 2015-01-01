@@ -1,7 +1,7 @@
 package {{.DB.Name}}
 
 import (
-    "time"
+    {{if .NeedsTime}}"time"{{end}}
     "database/sql"
     "log"
     "fmt"
@@ -78,8 +78,8 @@ func new{{$tbl_name}}(db Querier) (*{{$tbl_name}}, error) {
 
 
 // {{$datatype}} represents a row in table {{$tbl_name}}.
-type {{$datatype}} struct { {{range .Columns}}
-    {{.Name | camelize | export}} {{$tbl | col_to_go_type}} {{end}}
+type {{$datatype}} struct { {{range $tbl.Columns}}
+    {{.Name | camelize | export}} {{. | col_to_go_type}} {{end}}
 }
 
 // ensures that {{$datatype}} implements the Updater interface.

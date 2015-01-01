@@ -1,17 +1,5 @@
 package {{.Name}}
 
-import (
-    "bytes"
-    "database/sql"
-    "database/sql/driver"
-    "encoding/json"
-    "fmt"
-    "log"
-    "time"
-
-    "github.com/go-sql-driver/mysql"
-)
-
 {{$db_name := .Name | camelize | export}}
 
 type {{$db_name}}DB struct {

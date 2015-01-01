@@ -103,8 +103,12 @@ OFFSET ?`
 func selectString(tbl reflector.Table) string {
 	selects := bytes.NewBuffer(nil)
 	w := tabwriter.NewWriter(selects, 4, 8, 0, ' ', 0)
-	for _, col := range tbl.Columns {
-		fmt.Fprintf(w, "\n\t%s,", col.Name)
+	for i, col := range tbl.Columns {
+		if i == 0 {
+			fmt.Fprintf(w, "\n\t%s", col.Name)
+		} else {
+			fmt.Fprintf(w, "\n\t, %s", col.Name)
+		}
 	}
 	w.Flush()
 	return selects.String()
@@ -113,8 +117,12 @@ func selectString(tbl reflector.Table) string {
 func whereString(tbl reflector.Table) string {
 	wheres := bytes.NewBuffer(nil)
 	w := tabwriter.NewWriter(wheres, 4, 8, 0, ' ', 0)
-	for _, col := range whereFields(tbl) {
-		fmt.Fprintf(w, "\n\t%s\t = ?,", col.Name)
+	for i, col := range whereFields(tbl) {
+		if i == 0 {
+			fmt.Fprintf(w, "\n\t%s\t = ?", col.Name)
+		} else {
+			fmt.Fprintf(w, "\n\t, %s\t = ?", col.Name)
+		}
 	}
 	w.Flush()
 	return wheres.String()
@@ -123,8 +131,12 @@ func whereString(tbl reflector.Table) string {
 func whereIdxString(idx reflector.Index) string {
 	wheres := bytes.NewBuffer(nil)
 	w := tabwriter.NewWriter(wheres, 4, 8, 0, ' ', 0)
-	for _, col := range idx.Columns {
-		fmt.Fprintf(w, "\n\t%s\t = ?,", col.Name)
+	for i, col := range idx.Columns {
+		if i == 0 {
+			fmt.Fprintf(w, "\n\t, %s\t = ?", col.Name)
+		} else {
+			fmt.Fprintf(w, "\n\t%s\t = ?", col.Name)
+		}
 	}
 	w.Flush()
 	return wheres.String()
@@ -133,8 +145,12 @@ func whereIdxString(idx reflector.Index) string {
 func setString(tbl reflector.Table) string {
 	sets := bytes.NewBuffer(nil)
 	w := tabwriter.NewWriter(sets, 4, 8, 0, ' ', 0)
-	for _, col := range setFields(tbl) {
-		fmt.Fprintf(w, "\n\t%s\t = ?,", col.Name)
+	for i, col := range setFields(tbl) {
+		if i == 0 {
+			fmt.Fprintf(w, "\n\t%s\t = ?", col.Name)
+		} else {
+			fmt.Fprintf(w, "\n\t,%s\t = ?", col.Name)
+		}
 	}
 	w.Flush()
 	return sets.String()

@@ -40,7 +40,6 @@ func Generate(dirname string, schema *reflector.DBSchema) error {
 			return fmt.Errorf("bad template %q: %v", tname, err)
 		}
 		files[tname] = gofmted
-		// files[tname] = buf.Bytes()
 		return nil
 	}
 
@@ -56,6 +55,18 @@ func Generate(dirname string, schema *reflector.DBSchema) error {
 		}
 	}
 
+	needsTime := func(tbl reflector.Table) bool {
+		if tbl.Has("created_at") != nil || tbl.Has("updated_at") != nil {
+			return true
+		}
+		for _, col := range tbl.Columns {
+			if col.Type == reflector.SQLTime && !col.Nullable {
+				return true
+			}
+		}
+		return false
+	}
+
 	for _, tbl := range schema.Tables {
 		basename := pluralize(tbl.Name)
 		filename := basename + ".go"
@@ -66,6 +77,7 @@ func Generate(dirname string, schema *reflector.DBSchema) error {
 			"Tbl":          tbl,
 			"HasCreatedAt": tbl.Has("created_at"),
 			"HasUpdatedAt": tbl.Has("updated_at"),
+			"NeedsTime":    needsTime(tbl),
 		}
 
 		for tname, tcontent := range map[string]string{
