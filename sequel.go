@@ -52,7 +52,7 @@ func main() {
 	}
 
 	app.Name = "sequel"
-	app.Email = "antoine@do.co"
+	app.Email = "antoinegrondin@gmail.com"
 	app.Author = "Antoine Grondin"
 	app.Version = "0.1"
 	app.Flags = []cli.Flag{
